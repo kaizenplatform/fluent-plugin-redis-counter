@@ -60,6 +60,10 @@ module Fluent
                   list = table[key]
                   list = table[key] = [] unless list.is_a?(Array)
                   list << pattern.get_list_value(time, record)
+                elsif hash_key = pattern.hash_key
+                  list = table[hash_key]
+                  list = table[hash_key] = [] unless list.is_a?(Array)
+                  list << { key => pattern.get_count_value(record) }
                 else
                   table[key] += pattern.get_count_value(record)
                 end
@@ -77,7 +81,17 @@ module Fluent
         @redis.pipelined do
           items.each do |key, value|
             if value.is_a?(Array)
-              @redis.lpush(key, value)
+              if value[0].is_a?(Hash)
+                value.each do |hash|
+                  if hash.values.first.is_a?(Float)
+                    @redis.hincrbyfloat(key, hash.keys.first, hash.values.first)
+                  else
+                    @redis.hincrby(key, hash.keys.first, hash.values.first)
+                  end
+                end
+              else
+                @redis.lpush(key, value)
+              end
             elsif value.is_a?(Float)
               @redis.incrbyfloat(key, value)
             else
@@ -107,7 +121,7 @@ module Fluent
     end
 
     class Pattern
-      attr_reader :matches, :count_value, :count_value_key, :last, :required_keys, :list_value_format
+      attr_reader :matches, :count_value, :count_value_key, :last, :required_keys, :list_value_format, :hash_key
 
       def initialize(conf_element)
         if !conf_element.has_key?('count_key') && !conf_element.has_key?('count_key_format')
@@ -143,6 +157,8 @@ module Fluent
             end
           end
         end
+
+        @hash_key = conf_element['hash_key']
 
         @matches = {}
         conf_element.each_pair.select { |key, value|

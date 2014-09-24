@@ -16,6 +16,7 @@ class RedisCounterTest < Test::Unit::TestCase
     )
     redis.del("a")
     redis.del("b")
+    redis.del("c")
     redis.del("foo-2012-06-21")
     redis.del("item_sum_count:200")
     redis.quit
@@ -383,6 +384,7 @@ class RedisCounterTest < Test::Unit::TestCase
 
   def test_write_with_list_value_format
     conf = %[
+      db_number 1
       <pattern>
         count_key a
         list_value_format %_{prefix}-foo-%Y%m%d%H%M%S-%_{type}-%_{customer_id}
@@ -397,5 +399,21 @@ class RedisCounterTest < Test::Unit::TestCase
     assert_equal 'pre2-foo-20131103192021-foo-654', driver.instance.redis.lpop('a')
     assert_equal 'pre1-foo-20131103123456-bar-321', driver.instance.redis.lpop('a')
     assert_nil driver.instance.redis.lpop('a')
+  end
+
+  def test_write_with_hash_value
+    conf = %[
+      db_number 1
+      <pattern>
+        hash_key  c
+        count_key b
+      </pattern>
+    ]
+
+    driver = create_driver conf
+    driver.emit({'c' => 'c', 'b' => 'b'})
+    driver.emit({'c' => 'c', 'b' => 'b'})
+    driver.run
+    assert_equal '2', driver.instance.redis.hget('c', 'b')
   end
 end
